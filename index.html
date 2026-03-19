@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Medical Study & Anki Editor</title>
+    <style>
+        /* Force the body to never exceed the screen width */
+        html, body { 
+            max-width: 100%; 
+            overflow-x: hidden; 
+            margin: 0; 
+            padding: 10px;
+            background: #f4f4f9;
+            font-family: -apple-system, sans-serif;
+        }
+
+        .controls { 
+            position: sticky; top: 0; z-index: 100;
+            margin-bottom: 20px; display: flex; gap: 15px; align-items: center; 
+            background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+
+        /* FIXED: Added 'minmax(0, ...)' to every column to force shrinking */
+        #gridContainer { 
+            display: grid; 
+            grid-template-columns: 40px minmax(0, 25%) minmax(0, 40%) minmax(0, 35%); 
+            gap: 2px; background: #ccc; border: 2px solid #ccc; 
+            width: 100%;
+            table-layout: fixed; /* Suggests fixed sizing to the browser */
+        }
+
+        .header { background: #e2e2e2; padding: 10px; font-weight: bold; text-align: center; font-size: 12px; }
+        
+        .cell-wrapper { 
+            background: white; padding: 5px; display: flex; align-items: flex-start; 
+            min-width: 0; /* Prevents column from expanding to fit content */
+            overflow: hidden; 
+        }
+
+        .anki-preview { 
+            font-family: monospace; font-size: 11px; color: #555; background: #fafafa; 
+            white-space: pre-wrap; 
+            word-break: break-all; /* Forces long Anki strings to wrap lines */
+            width: 100%; padding: 5px; 
+            border: 1px inset #eee; box-sizing: border-box;
+            overflow-wrap: break-word;
+        }
+
+        .del-btn { background: #ffeded; color: #cc0000; border: none; width: 30px; height: 30px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+        
+        textarea { 
+            width: 100%; min-height: 50px; border: none; outline: none; 
+            font-size: 14px; line-height: 1.5; resize: none; overflow: hidden; 
+            font-family: inherit; box-sizing: border-box;
+        }
+
+        .status { font-size: 12px; color: #666; margin-left: auto; }
+        button { cursor: pointer; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; background: #fff; font-weight: 500; }
+        .anki-btn { background: #0071e3; color: white; border: none; }
+        .hint { font-size: 11px; color: #888; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <input type="file" id="csvInput" accept=".csv">
+    <button onclick="downloadCSV()">Save Backup CSV</button>
+    <button class="anki-btn" onclick="downloadAnki()">Download Anki CSV</button>
+    <div class="hint"><b>Cmd+I</b> to wrap in *asterisks* | <b>*text:hint*</b> → {{c1::text::hint}}</div>
+    <button onclick="clearData()" style="color: red; margin-left: auto;">Clear All</button>
+    <div id="saveStatus" class="status">Initializing...</div>
+</div>
+
+<div id="gridContainer">
+    <div class="header" style="background:#bbb"></div>
+    <div class="header">1. Concept (Term)</div>
+    <div class="header">2. Details (Cloze)</div>
+    <div class="header">3. Virtual Anki Preview</div>
+</div>
+
+<script>
+    const grid = document.getElementById('gridContainer');
+    const saveStatus = document.getElementById('saveStatus');
+    let rowCount = 0;
+
+    function createRow(valA = '', valB = '') {
+        rowCount++;
+        const rowNum = rowCount;
+        const rowId = `row-${rowNum}`;
+        
+        const html = `
+            <div class="cell-wrapper" data-row="${rowId}"><button class="del-btn" onclick="deleteRow('${rowId}')">×</button></div>
+            <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-a-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valA}</textarea></div>
+            <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-b-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valB}</textarea></div>
+            <div class="cell-wrapper" data-row="${rowId}"><div id="anki-${rowNum}" class="anki-preview"></div></div>
+        `;
+        grid.insertAdjacentHTML('beforeend', html);
+        
+        setTimeout(() => {
+            updateAnkiPreview(rowNum);
+            autoResize(document.getElementById(`cell-a-${rowNum}`));
+        }, 50);
+    }
+
+    function updateAnkiPreview(index) {
+        const a = document.getElementById(`cell-a-${index}`)?.value || '';
+        const b = document.getElementById(`cell-b-${index}`)?.value || '';
+        const preview = document.getElementById(`anki-${index}`);
+        if (!preview) return;
+
+        let colA = a ? `<b>${a}</b><br>` : '';
+        let colB = b.replace(/\*(.*?)\*/g, (match, content) => {
+            if (content.includes(':')) {
+                const parts = content.split(':');
+                return `{{c1::${parts[0]}::${parts[1]}}}`;
+            }
+            return `{{c1::${content}}}`;
+        });
+        
+        preview.innerText = colA + colB.replace(/\n/g, '<br>');
+    }
+
+    function handleInput(el) {
+        const rowNum = el.id.split('-')[2];
+        updateAnkiPreview(rowNum);
+        autoResize(el);
+        
+        const allTextareas = document.querySelectorAll('textarea');
+        if (el === allTextareas[allTextareas.length - 1] || el === allTextareas[allTextareas.length - 2]) {
+            createRow();
+        }
+    }
+
+    function autoResize(el) {
+        if (!el) return;
+        const rowNum = el.id.split('-')[2];
+        const a = document.getElementById(`cell-a-${rowNum}`);
+        const b = document.getElementById(`cell-b-${rowNum}`);
+        const preview = document.getElementById(`anki-${rowNum}`);
+        
+        if (a && b) {
+            a.style.height = 'auto'; b.style.height = 'auto';
+            const tallest = Math.max(a.scrollHeight, b.scrollHeight);
+            a.style.height = tallest + 'px';
+            b.style.height = tallest + 'px';
+            if (preview) preview.style.minHeight = tallest + 'px';
+        }
+    }
+
+    function handleKey(e, el) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+            e.preventDefault();
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            if (start !== end) {
+                const selected = el.value.substring(start, end);
+                el.value = el.value.substring(0, start) + `*${selected}*` + el.value.substring(end);
+            } else {
+                const lines = el.value.split('\n');
+                el.value = lines.map(l => (l.trim() && !l.includes('*')) ? `*${l.trim()}*` : l).join('\n');
+            }
+            handleInput(el);
+        }
+    }
+
+    function parseCSV(text) {
+        const rows = []; let row = []; let cell = ''; let inQuotes = false;
+        for (let i = 0; i < text.length; i++) {
+            let char = text[i], next = text[i+1];
+            if (char === '"' && inQuotes && next === '"') { cell += '"'; i++; }
+            else if (char === '"') inQuotes = !inQuotes;
+            else if (char === ',' && !inQuotes) { row.push(cell); cell = ''; }
+            else if ((char === '\n' || char === '\r') && !inQuotes) {
+                if (cell || row.length) { row.push(cell); rows.push(row); row = []; cell = ''; }
+                if (char === '\r' && next === '\n') i++;
+            } else cell += char;
+        }
+        if (cell || row.length) { row.push(cell); rows.push(row); }
+        return rows;
+    }
+
+    document.getElementById('csvInput').addEventListener('change', function(e) {
+        const reader = new FileReader();
+        reader.onload = function() {
+            const data = parseCSV(reader.result);
+            document.querySelectorAll('.cell-wrapper').forEach(el => el.remove());
+            rowCount = 0;
+            data.forEach(r => { if(r.length >= 2) createRow(r[0].trim(), r[1].trim()); });
+            if (rowCount < 5) for (let i = 0; i < 5; i++) createRow();
+        };
+        reader.readAsText(e.target.files[0]);
+    });
+
+    function downloadCSV() {
+        let csv = "";
+        const tx = document.querySelectorAll('textarea');
+        for (let i = 0; i < tx.length; i += 2) {
+            const a = tx[i].value.replace(/"/g, '""');
+            const b = (tx[i+1]?.value || '').replace(/"/g, '""');
+            if (a || b) csv += `"${a}","${b}"\n`;
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = 'study_backup.csv'; a.click();
+    }
+
+    function downloadAnki() {
+        let csv = "";
+        for (let i = 1; i <= rowCount; i++) {
+            const p = document.getElementById(`anki-${i}`);
+            if (p && p.innerText.trim().length > 2) {
+                const content = p.innerText.replace(/"/g, '""');
+                csv += `"${content}"\n`;
+            }
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = 'anki_import.csv'; a.click();
+    }
+
+    function deleteRow(id) { 
+        if(confirm("Delete this row?")) {
+            document.querySelectorAll(`[data-row="${id}"]`).forEach(el => el.remove());
+        }
+    }
+
+    function clearData() {
+        if(confirm("Permanently delete ALL local data?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+
+    setInterval(() => {
+        const data = [];
+        const textareas = document.querySelectorAll('textarea');
+        for (let i = 0; i < textareas.length; i += 2) {
+            const a = textareas[i].value;
+            const b = textareas[i+1]?.value || '';
+            if (a || b) data.push([a, b]);
+        }
+        localStorage.setItem('studyData', JSON.stringify(data));
+        saveStatus.innerText = "Autosaved: " + new Date().toLocaleTimeString();
+    }, 15000);
+
+    window.onload = () => {
+        const saved = localStorage.getItem('studyData');
+        if (saved) {
+            JSON.parse(saved).forEach(r => createRow(r[0], r[1]));
+        }
+        if (rowCount < 5) for (let i = 0; i < 5; i++) createRow();
+    };
+</script>
+</body>
+</html>
