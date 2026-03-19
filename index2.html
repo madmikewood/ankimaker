@@ -8,36 +8,43 @@
         
         .controls { 
             position: sticky; top: 0; z-index: 100;
-            margin-bottom: 20px; display: flex; gap: 15px; align-items: center; 
+            margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;
             background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
         }
 
         #gridContainer { 
             display: grid; 
-            grid-template-columns: 40px minmax(0, 25%) minmax(0, 40%) minmax(0, 35%); 
+            grid-template-columns: 40px 25% 35% 40%; /* Initial, script will override */
             gap: 2px; background: #ccc; border: 2px solid #ccc; width: 100%;
         }
 
         .header { background: #e2e2e2; padding: 10px; font-weight: bold; text-align: center; font-size: 12px; }
         .cell-wrapper { background: white; padding: 5px; display: flex; align-items: flex-start; min-width: 0; overflow: hidden; }
 
-        .anki-sim { 
-            width: 100%; padding: 15px; background: white; border: 1px solid #ddd; border-radius: 12px;
-            font-size: 14px; line-height: 1.6; text-align: center; box-sizing: border-box;
-            min-height: 100px; box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+        /* --- ANKI SIMULATOR STYLING --- */
+        .anki-sim-wrapper { 
+            width: 100%; padding: 20px; background: white; border: 1px solid #ddd; border-radius: 12px;
+            box-sizing: border-box; box-shadow: inset 0 0 5px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center;
         }
         
-        .cloze-hidden { background: #eef6ff; color: #0071e3; font-weight: bold; padding: 0 6px; border-radius: 4px; border: 1px dashed #0071e3; }
-        .cloze-revealed { color: #d70000; font-weight: bold; background: #fff0f0; padding: 0 2px; border-radius: 2px; }
+        .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; }
+        
+        /* The "Standard Anki" Blue Highlight for Hidden Clozes */
+        .cloze-hidden { background-color: #cce5ff; color: #0056b3; font-weight: bold; padding: 0 4px; border-radius: 3px; cursor: default; }
+        
+        /* The "Standard Anki" Red for Revealed Clozes */
+        .cloze-revealed { color: #d70000; font-weight: bold; background: none; }
 
         .del-btn { background: #ffeded; color: #cc0000; border: none; width: 30px; height: 30px; cursor: pointer; font-weight: bold; border-radius: 4px; }
-        textarea { width: 100%; min-height: 60px; border: none; outline: none; font-size: 14px; line-height: 1.5; resize: none; overflow: hidden; font-family: inherit; box-sizing: border-box; }
+        textarea { width: 100%; min-height: 80px; border: none; outline: none; font-size: 14px; line-height: 1.5; resize: none; overflow: hidden; font-family: inherit; box-sizing: border-box; }
 
-        .status { font-size: 12px; color: #666; margin-left: auto; }
+        .status { font-size: 11px; color: #666; margin-left: auto; }
         button { cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; font-weight: 500; }
         .anki-btn { background: #0071e3; color: white; border: none; }
         .toggle-btn { background: #34c759; color: white; border: none; min-width: 180px; }
-        .hint-text { font-size: 11px; color: #888; }
+        
+        .input-group { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #444; }
+        .num-input { width: 50px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
     </style>
 </head>
 <body>
@@ -46,17 +53,26 @@
     <input type="file" id="csvInput" accept=".csv">
     <button onclick="downloadCSV()">Save Backup CSV</button>
     <button class="anki-btn" onclick="downloadAnki()">Export to Anki</button>
+    
+    <div class="input-group">
+        <span>Sim Width %</span>
+        <input type="number" id="widthInput" class="num-input" value="35" min="10" max="60" onchange="updateLayout()">
+    </div>
+    <div class="input-group">
+        <span>Font Size (px)</span>
+        <input type="number" id="fontInput" class="num-input" value="16" min="10" max="40" onchange="updateLayout()">
+    </div>
+
     <button id="masterToggle" class="toggle-btn" onclick="toggleAllModes()">Switch to ANSWER Mode</button>
-    <div class="hint-text"><b>Cmd+I</b> to Cloze | <b>*Text:Hint*</b></div>
     <button onclick="clearData()" style="color: red; margin-left: auto;">Clear All</button>
     <div id="saveStatus" class="status">Initializing...</div>
 </div>
 
 <div id="gridContainer">
     <div class="header" style="background:#bbb"></div>
-    <div class="header">Concept (Col 1)</div>
-    <div class="header">Details (Col 2)</div>
-    <div class="header">Anki Simulator</div>
+    <div class="header">1. Concept (Term)</div>
+    <div class="header">2. Details (Notes)</div>
+    <div class="header">3. iPhone Simulation</div>
 </div>
 
 <script>
@@ -64,6 +80,26 @@
     const saveStatus = document.getElementById('saveStatus');
     let rowCount = 0;
     let isAnswerMode = false;
+
+    function updateLayout() {
+        const simWidth = document.getElementById('widthInput').value;
+        const fontSize = document.getElementById('fontInput').value;
+        
+        // Distribute remaining width between col 1 and 2
+        const remaining = 100 - simWidth - 5; // 5% for delete col
+        const col1 = remaining * 0.4;
+        const col2 = remaining * 0.6;
+        
+        grid.style.gridTemplateColumns = `40px ${col1}% ${col2}% ${simWidth}%`;
+        
+        document.querySelectorAll('.anki-sim').forEach(el => {
+            el.style.fontSize = fontSize + 'px';
+        });
+        
+        // Save preferences
+        localStorage.setItem('pref_width', simWidth);
+        localStorage.setItem('pref_font', fontSize);
+    }
 
     function toggleAllModes() {
         isAnswerMode = !isAnswerMode;
@@ -82,13 +118,14 @@
             <div class="cell-wrapper" data-row="${rowId}"><button class="del-btn" onclick="deleteRow('${rowId}')">×</button></div>
             <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-a-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valA}</textarea></div>
             <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-b-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valB}</textarea></div>
-            <div class="cell-wrapper" data-row="${rowId}"><div id="anki-${rowNum}" class="anki-sim"></div></div>
+            <div class="cell-wrapper" data-row="${rowId}"><div class="anki-sim-wrapper"><div id="anki-${rowNum}" class="anki-sim"></div></div></div>
         `;
         grid.insertAdjacentHTML('beforeend', html);
         
         setTimeout(() => {
             updateAnkiPreview(rowNum);
             autoResize(document.getElementById(`cell-a-${rowNum}`));
+            updateLayout();
         }, 50);
     }
 
@@ -98,14 +135,20 @@
         const sim = document.getElementById(`anki-${index}`);
         if (!sim) return;
 
-        let displayA = a ? `<div style="font-weight:bold; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;">${a}</div>` : '';
-        let displayB = b.replace(/\*(.*?)\*/g, (match, content) => {
+        let title = a ? `<div style="font-weight:bold; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">${a}</div>` : '';
+        
+        // Convert *text:hint* to simulated cloze
+        let body = b.replace(/\*(.*?)\*/g, (match, content) => {
             const parts = content.split(':');
             const mainText = parts[0];
-            const hint = parts[1] ? `[${parts[1]}]` : '[...]';
-            return isAnswerMode ? `<span class="cloze-revealed">${mainText}</span>` : `<span class="cloze-hidden">${hint}</span>`;
+            const hintText = parts[1] ? `[${parts[1]}]` : '[...]';
+            
+            return isAnswerMode 
+                ? `<span class="cloze-revealed">${mainText}</span>` 
+                : `<span class="cloze-hidden">${hintText}</span>`;
         });
-        sim.innerHTML = displayA + displayB.replace(/\n/g, '<br>');
+
+        sim.innerHTML = title + body.replace(/\n/g, '<br>');
     }
 
     function handleInput(el) {
@@ -121,13 +164,11 @@
         const rowNum = el.id.split('-')[2];
         const a = document.getElementById(`cell-a-${rowNum}`);
         const b = document.getElementById(`cell-b-${rowNum}`);
-        const sim = document.getElementById(`anki-${rowNum}`);
         if (a && b) {
             a.style.height = 'auto'; b.style.height = 'auto';
             const tallest = Math.max(a.scrollHeight, b.scrollHeight, 100);
             a.style.height = tallest + 'px';
             b.style.height = tallest + 'px';
-            if (sim) sim.style.minHeight = tallest + 'px';
         }
     }
 
@@ -202,8 +243,8 @@
         a.download = 'study_backup.csv'; a.click();
     }
 
-    function deleteRow(id) { if(confirm("Delete?")) document.querySelectorAll(`[data-row="${id}"]`).forEach(el => el.remove()); }
-    function clearData() { if(confirm("Clear All?")) { localStorage.clear(); location.reload(); } }
+    function deleteRow(id) { if(confirm("Delete row?")) document.querySelectorAll(`[data-row="${id}"]`).forEach(el => el.remove()); }
+    function clearData() { if(confirm("Clear all data?")) { localStorage.clear(); location.reload(); } }
 
     setInterval(() => {
         const data = []; const tx = document.querySelectorAll('textarea');
@@ -216,9 +257,15 @@
     }, 15000);
 
     window.onload = () => {
+        // Restore layout preferences
+        const w = localStorage.getItem('pref_width'), f = localStorage.getItem('pref_font');
+        if(w) document.getElementById('widthInput').value = w;
+        if(f) document.getElementById('fontInput').value = f;
+
         const saved = localStorage.getItem('studyData');
         if (saved) JSON.parse(saved).forEach(r => createRow(r[0], r[1]));
         if (rowCount < 5) for (let i = 0; i < 5; i++) createRow();
+        updateLayout();
     };
 </script>
 </body>
