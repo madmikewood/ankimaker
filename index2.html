@@ -33,6 +33,15 @@
         
         .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; color: #ffffff; }
         
+        /* The Auto-Divider Line */
+        .anki-divider {
+            border: 0;
+            height: 1px;
+            background: #3a3a3c;
+            margin: 0.5em 0;
+            width: 100%;
+        }
+
         .cloze-hidden { background-color: #004a99; color: #80bfff; padding: 0 6px; border-radius: 4px; cursor: default; font-weight: bold; }
         .cloze-revealed { color: #00aaff; font-weight: bold; background: none; }
 
@@ -67,7 +76,6 @@
     </div>
 
     <button id="masterToggle" class="toggle-btn" onclick="toggleAllModes()">Switch to ANSWER Mode</button>
-    <div class="status" style="margin-left:15px; font-size:10px;"><b>Cmd+I</b> Cloze | <b>_U_</b> | <b>__B/U__</b></div>
     <button onclick="clearData()" style="color: #ff453a; margin-left: auto; border-color: #411d1d;">Clear All</button>
     <div id="saveStatus" class="status">Initializing...</div>
 </div>
@@ -85,25 +93,17 @@
     let rowCount = 0;
     let isAnswerMode = false;
 
-    // Shared formatting logic for Simulator and Export
+    // Standard Formatting (Underlines/Bold)
     function applyTextFormatting(text, isForSim = true) {
         let processed = text;
-
-        // 1. Handle Double Underscores (Bold + Underline)
         processed = processed.replace(/__(.*?)__/g, '<b><u>$1</u></b>');
-
-        // 2. Handle Single Underscores (Underline) - check for non-double ones
         processed = processed.replace(/_([^_]+)_/g, '<u>$1</u>');
-
-        // 3. Handle Clozes (only if for Sim)
         if (isForSim) {
             processed = processed.replace(/\*(.*?)\*/g, (match, content) => {
                 const parts = content.split(':');
                 const mainText = parts[0];
                 const hintText = parts[1] ? `[${parts[1]}]` : '[...]';
-                return isAnswerMode 
-                    ? `<span class="cloze-revealed">${mainText}</span>` 
-                    : `<span class="cloze-hidden">${hintText}</span>`;
+                return isAnswerMode ? `<span class="cloze-revealed">${mainText}</span>` : `<span class="cloze-hidden">${hintText}</span>`;
             });
         }
         return processed;
@@ -131,8 +131,12 @@
         const b = document.getElementById(`cell-b-${index}`)?.value || '';
         const sim = document.getElementById(`anki-${index}`);
         if (!sim) return;
-        let title = a ? `<div style="font-weight:bold; margin-bottom:15px; border-bottom:1px solid #3a3a3c; padding-bottom:10px; color:#fff;">${applyTextFormatting(a, false)}</div>` : '';
-        sim.innerHTML = title + processLineBreaks(b, true);
+
+        // Auto-including the Divider Line
+        let title = a ? `<div style="font-weight:bold; color:#fff;">${applyTextFormatting(a, false)}</div>` : '';
+        let divider = (a && b) ? `<hr class="anki-divider">` : '';
+        
+        sim.innerHTML = title + divider + processLineBreaks(b, true);
     }
 
     function downloadAnki() {
@@ -141,16 +145,17 @@
             const a = document.getElementById(`cell-a-${i}`)?.value || '';
             const b = document.getElementById(`cell-b-${i}`)?.value || '';
             if (a || b) {
-                let colA = `<b>${applyTextFormatting(a, false)}</b><br>`;
+                // Formatting for real Anki import
+                let colA = `<b>${applyTextFormatting(a, false)}</b>`;
+                let divider = `<hr style="border:0; height:1px; background:#3a3a3c; margin:0.5em 0; width:100%;">`;
                 let rawB = b.split('\n').map(l => l.trim() === '-' ? '<div style="height: 0.5em;"></div>' : applyTextFormatting(l, false)).join('<br>');
                 
-                // Convert *asterisks* to Anki {{c1::}}
                 let finalB = rawB.replace(/\*(.*?)\*/g, (m, c) => {
                     const p = c.split(':');
                     return p[1] ? `{{c1::${p[0]}::${p[1]}}}` : `{{c1::${p[0]}}}`;
                 });
 
-                csv += `"${(colA + finalB).replace(/"/g, '""')}"\n`;
+                csv += `"${(colA + divider + finalB).replace(/"/g, '""')}"\n`;
             }
         }
         const link = document.createElement('a');
@@ -158,8 +163,8 @@
         link.download = 'anki_import.csv'; link.click();
     }
 
+    // --- Core Logic Handlers (Key, Resize, CSV) ---
     function handleKey(e, el) {
-        // Cmd+I: Cloze
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'i') {
             e.preventDefault();
             const start = el.selectionStart, end = el.selectionEnd;
@@ -170,8 +175,6 @@
             }
             handleInput(el);
         }
-
-        // Cmd+Shift+L: Spacers
         if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
             e.preventDefault();
             const lines = el.value.split('\n').filter(l => l.trim() !== '-');
@@ -180,7 +183,6 @@
         }
     }
 
-    // --- Standard Handlers (Resize, Input, Layout, CSV) ---
     function updateLayout() {
         const simWidth = document.getElementById('widthInput').value;
         const fontSize = document.getElementById('fontInput').value;
