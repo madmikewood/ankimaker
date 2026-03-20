@@ -33,13 +33,9 @@
         
         .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; color: #ffffff; }
         
-        /* The Auto-Divider Line */
         .anki-divider {
-            border: 0;
-            height: 1px;
-            background: #ffffff;
-            margin: 0.5em 0;
-            width: 100%;
+            border: 0; height: 1px; background: #ffffff;
+            margin: 0.5em 0; width: 100%;
         }
 
         .cloze-hidden { background-color: #004a99; color: #80bfff; padding: 0 6px; border-radius: 4px; cursor: default; font-weight: bold; }
@@ -93,7 +89,6 @@
     let rowCount = 0;
     let isAnswerMode = false;
 
-    // Standard Formatting (Underlines/Bold)
     function applyTextFormatting(text, isForSim = true) {
         let processed = text;
         processed = processed.replace(/__(.*?)__/g, '<b><u>$1</u></b>');
@@ -109,6 +104,7 @@
         return processed;
     }
 
+    // FIXED: Unified logic for Sim and Export to handle dash-spacer without extra <br>
     function processLineBreaks(text, isForSim = true) {
         const lines = text.split('\n');
         let htmlParts = [];
@@ -118,9 +114,10 @@
             if (trimmed === '-') {
                 htmlParts.push('<div style="height: 0.5em;"></div>');
             } else {
-                line = applyTextFormatting(line, isForSim);
+                let content = applyTextFormatting(line, isForSim);
+                // Only add <br> if there's a next line AND that line isn't a spacer dash
                 let suffix = (i < lines.length - 1 && lines[i+1].trim() !== '-') ? "<br>" : "";
-                htmlParts.push(line + suffix);
+                htmlParts.push(content + suffix);
             }
         }
         return htmlParts.join('');
@@ -131,11 +128,8 @@
         const b = document.getElementById(`cell-b-${index}`)?.value || '';
         const sim = document.getElementById(`anki-${index}`);
         if (!sim) return;
-
-        // Auto-including the Divider Line
         let title = a ? `<div style="font-weight:bold; color:#fff;">${applyTextFormatting(a, false)}</div>` : '';
         let divider = (a && b) ? `<hr class="anki-divider">` : '';
-        
         sim.innerHTML = title + divider + processLineBreaks(b, true);
     }
 
@@ -145,16 +139,17 @@
             const a = document.getElementById(`cell-a-${i}`)?.value || '';
             const b = document.getElementById(`cell-b-${i}`)?.value || '';
             if (a || b) {
-                // Formatting for real Anki import
                 let colA = `<b>${applyTextFormatting(a, false)}</b>`;
                 let divider = `<hr style="border:0; height:1px; background:#3a3a3c; margin:0.5em 0; width:100%;">`;
-                let rawB = b.split('\n').map(l => l.trim() === '-' ? '<div style="height: 0.5em;"></div>' : applyTextFormatting(l, false)).join('<br>');
                 
+                // Get content with spacers and NO redundant breaks
+                let rawB = processLineBreaks(b, false);
+                
+                // Convert *asterisks* to Anki {{c1::}}
                 let finalB = rawB.replace(/\*(.*?)\*/g, (m, c) => {
                     const p = c.split(':');
                     return p[1] ? `{{c1::${p[0]}::${p[1]}}}` : `{{c1::${p[0]}}}`;
                 });
-
                 csv += `"${(colA + divider + finalB).replace(/"/g, '""')}"\n`;
             }
         }
@@ -163,7 +158,6 @@
         link.download = 'anki_import.csv'; link.click();
     }
 
-    // --- Core Logic Handlers (Key, Resize, CSV) ---
     function handleKey(e, el) {
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'i') {
             e.preventDefault();
