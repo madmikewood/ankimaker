@@ -33,10 +33,7 @@
         
         .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; color: #ffffff; }
         
-        /* Hidden: Blue block with visible hint text */
         .cloze-hidden { background-color: #004a99; color: #80bfff; padding: 0 6px; border-radius: 4px; cursor: default; font-weight: bold; }
-        
-        /* Revealed: Classic Anki Blue text */
         .cloze-revealed { color: #00aaff; font-weight: bold; background: none; }
 
         .del-btn { background: #411d1d; color: #ff453a; border: none; width: 30px; height: 30px; cursor: pointer; font-weight: bold; border-radius: 6px; }
@@ -70,6 +67,7 @@
     </div>
 
     <button id="masterToggle" class="toggle-btn" onclick="toggleAllModes()">Switch to ANSWER Mode</button>
+    <div class="status" style="margin-left:15px; font-size:10px;"><b>Cmd+Shift+L</b>: Add Spacers</div>
     <button onclick="clearData()" style="color: #ff453a; margin-left: auto; border-color: #411d1d;">Clear All</button>
     <div id="saveStatus" class="status">Initializing...</div>
 </div>
@@ -90,11 +88,9 @@
     function processLineBreaks(text, isForSim = true) {
         const lines = text.split('\n');
         let htmlParts = [];
-
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             let trimmed = line.trim();
-
             if (trimmed === '-') {
                 htmlParts.push('<div style="height: 0.5em;"></div>');
             } else {
@@ -103,9 +99,7 @@
                         const parts = content.split(':');
                         const mainText = parts[0];
                         const hintText = parts[1] ? `[${parts[1]}]` : '[...]';
-                        return isAnswerMode 
-                            ? `<span class="cloze-revealed">${mainText}</span>` 
-                            : `<span class="cloze-hidden">${hintText}</span>`;
+                        return isAnswerMode ? `<span class="cloze-revealed">${mainText}</span>` : `<span class="cloze-hidden">${hintText}</span>`;
                     });
                 }
                 let suffix = (i < lines.length - 1 && lines[i+1].trim() !== '-') ? "<br>" : "";
@@ -142,6 +136,30 @@
         const link = document.createElement('a');
         link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
         link.download = 'anki_import.csv'; link.click();
+    }
+
+    function handleKey(e, el) {
+        // Cmd+I / Ctrl+I: Cloze logic
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'i') {
+            e.preventDefault();
+            const start = el.selectionStart, end = el.selectionEnd;
+            if (start !== end) {
+                el.value = el.value.substring(0, start) + `*${el.value.substring(start, end)}*` + el.value.substring(end);
+            } else {
+                el.value = el.value.split('\n').map(l => (l.trim() && !l.includes('*')) ? `*${l.trim()}*` : l).join('\n');
+            }
+            handleInput(el);
+        }
+
+        // NEW: Cmd+Shift+L / Ctrl+Shift+L: Insert spacers between lines
+        if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+            e.preventDefault();
+            const lines = el.value.split('\n').filter(l => l.trim() !== '-'); // Filter existing spacers first
+            if (lines.length > 1) {
+                el.value = lines.join('\n-\n');
+            }
+            handleInput(el);
+        }
     }
 
     function updateLayout() {
@@ -192,19 +210,6 @@
             a.style.height = 'auto'; b.style.height = 'auto';
             const tallest = Math.max(a.scrollHeight, b.scrollHeight, 100);
             a.style.height = tallest + 'px'; b.style.height = tallest + 'px';
-        }
-    }
-
-    function handleKey(e, el) {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
-            e.preventDefault();
-            const start = el.selectionStart, end = el.selectionEnd;
-            if (start !== end) {
-                el.value = el.value.substring(0, start) + `*${el.value.substring(start, end)}*` + el.value.substring(end);
-            } else {
-                el.value = el.value.split('\n').map(l => (l.trim() && !l.includes('*')) ? `*${l.trim()}*` : l).join('\n');
-            }
-            handleInput(el);
         }
     }
 
