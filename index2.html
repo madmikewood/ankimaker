@@ -33,12 +33,13 @@
         
         .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; color: #ffffff; }
         
-        .cloze-hidden { background-color: #48484a; color: transparent; padding: 0 4px; border-radius: 4px; cursor: default; }
+        /* Hidden: Blue block with visible hint text */
+        .cloze-hidden { background-color: #004a99; color: #80bfff; padding: 0 6px; border-radius: 4px; cursor: default; font-weight: bold; }
+        
+        /* Revealed: Classic Anki Blue text */
         .cloze-revealed { color: #00aaff; font-weight: bold; background: none; }
 
         .del-btn { background: #411d1d; color: #ff453a; border: none; width: 30px; height: 30px; cursor: pointer; font-weight: bold; border-radius: 6px; }
-        .del-btn:hover { background: #641e1e; }
-
         textarea { 
             width: 100%; min-height: 80px; border: none; outline: none; 
             font-size: 14px; line-height: 1.5; resize: none; overflow: hidden; 
@@ -46,15 +47,10 @@
         }
 
         .status { font-size: 11px; color: #8e8e93; margin-left: auto; }
-        button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3a3c; background: #3a3a3c; color: #f2f2f7; font-weight: 500; transition: 0.2s; }
+        button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3a3c; background: #3a3a3c; color: #f2f2f7; font-weight: 500; }
         .anki-btn { background: #007aff; color: white; border: none; }
         .toggle-btn { background: #32d74b; color: #000; border: none; min-width: 180px; font-weight: bold; }
-        
-        .input-group { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #aeaeae; }
         .num-input { width: 50px; padding: 5px; border: 1px solid #3a3a3c; border-radius: 6px; text-align: center; background: #1c1c1e; color: #ffffff; }
-        
-        /* The half-height spacer class */
-        .spacer-half { height: 0.5em; width: 100%; }
     </style>
 </head>
 <body>
@@ -64,11 +60,11 @@
     <button onclick="downloadCSV()">Save Backup CSV</button>
     <button class="anki-btn" onclick="downloadAnki()">Export to Anki</button>
     
-    <div class="input-group">
+    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#aeaeae;">
         <span>Sim Width %</span>
         <input type="number" id="widthInput" class="num-input" value="35" min="10" max="60" onchange="updateLayout()">
     </div>
-    <div class="input-group">
+    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#aeaeae;">
         <span>Font Size (px)</span>
         <input type="number" id="fontInput" class="num-input" value="18" min="10" max="40" onchange="updateLayout()">
     </div>
@@ -80,9 +76,9 @@
 
 <div id="gridContainer">
     <div class="header"></div>
-    <div class="header">Concept (Term)</div>
-    <div class="header">Details (Notes)</div>
-    <div class="header">iPhone Simulation (Dark)</div>
+    <div class="header">Concept</div>
+    <div class="header">Notes</div>
+    <div class="header">Anki Simulator</div>
 </div>
 
 <script>
@@ -91,7 +87,6 @@
     let rowCount = 0;
     let isAnswerMode = false;
 
-    // Core function to process newlines and spacers correctly
     function processLineBreaks(text, isForSim = true) {
         const lines = text.split('\n');
         let htmlParts = [];
@@ -101,28 +96,32 @@
             let trimmed = line.trim();
 
             if (trimmed === '-') {
-                // Return half-height spacer div without a trailing <br>
                 htmlParts.push('<div style="height: 0.5em;"></div>');
             } else {
-                // Apply Cloze processing if it's for the simulator
                 if (isForSim) {
                     line = line.replace(/\*(.*?)\*/g, (match, content) => {
                         const parts = content.split(':');
                         const mainText = parts[0];
                         const hintText = parts[1] ? `[${parts[1]}]` : '[...]';
-                        return isAnswerMode ? `<span class="cloze-revealed">${mainText}</span>` : `<span class="cloze-hidden">${hintText}</span>`;
+                        return isAnswerMode 
+                            ? `<span class="cloze-revealed">${mainText}</span>` 
+                            : `<span class="cloze-hidden">${hintText}</span>`;
                     });
                 }
-                
-                // Add <br> only if it's not the last line and the next line isn't a spacer
-                let suffix = "";
-                if (i < lines.length - 1 && lines[i+1].trim() !== '-') {
-                    suffix = "<br>";
-                }
+                let suffix = (i < lines.length - 1 && lines[i+1].trim() !== '-') ? "<br>" : "";
                 htmlParts.push(line + suffix);
             }
         }
         return htmlParts.join('');
+    }
+
+    function updateAnkiPreview(index) {
+        const a = document.getElementById(`cell-a-${index}`)?.value || '';
+        const b = document.getElementById(`cell-b-${index}`)?.value || '';
+        const sim = document.getElementById(`anki-${index}`);
+        if (!sim) return;
+        let title = a ? `<div style="font-weight:bold; margin-bottom:15px; border-bottom:1px solid #3a3a3c; padding-bottom:10px; color:#fff;">${a}</div>` : '';
+        sim.innerHTML = title + processLineBreaks(b, true);
     }
 
     function downloadAnki() {
@@ -132,16 +131,11 @@
             const b = document.getElementById(`cell-b-${i}`)?.value || '';
             if (a || b) {
                 let colA = `<b>${a}</b><br>`;
-                
-                // Process spacers for the final code
-                let processedB = processLineBreaks(b, false);
-                
-                // Convert remaining *asterisks* to Anki {{c1::}}
-                let finalB = processedB.replace(/\*(.*?)\*/g, (m, c) => {
+                let rawB = b.split('\n').map(l => l.trim() === '-' ? '<div style="height: 0.5em;"></div>' : l).join('<br>');
+                let finalB = rawB.replace(/\*(.*?)\*/g, (m, c) => {
                     const p = c.split(':');
                     return p[1] ? `{{c1::${p[0]}::${p[1]}}}` : `{{c1::${p[0]}}}`;
                 });
-
                 csv += `"${(colA + finalB).replace(/"/g, '""')}"\n`;
             }
         }
@@ -150,24 +144,11 @@
         link.download = 'anki_import.csv'; link.click();
     }
 
-    function updateAnkiPreview(index) {
-        const a = document.getElementById(`cell-a-${index}`)?.value || '';
-        const b = document.getElementById(`cell-b-${index}`)?.value || '';
-        const sim = document.getElementById(`anki-${index}`);
-        if (!sim) return;
-
-        let title = a ? `<div style="font-weight:bold; margin-bottom:15px; border-bottom:1px solid #3a3a3c; padding-bottom:10px; color:#fff;">${a}</div>` : '';
-        sim.innerHTML = title + processLineBreaks(b, true);
-    }
-
-    // --- Layout and UI Handlers ---
     function updateLayout() {
         const simWidth = document.getElementById('widthInput').value;
         const fontSize = document.getElementById('fontInput').value;
         const remaining = 100 - simWidth - 5;
-        const col1 = remaining * 0.4;
-        const col2 = remaining * 0.6;
-        grid.style.gridTemplateColumns = `40px ${col1}% ${col2}% ${simWidth}%`;
+        grid.style.gridTemplateColumns = `40px ${remaining * 0.4}% ${remaining * 0.6}% ${simWidth}%`;
         document.querySelectorAll('.anki-sim').forEach(el => el.style.fontSize = fontSize + 'px');
         localStorage.setItem('pref_width', simWidth);
         localStorage.setItem('pref_font', fontSize);
@@ -192,11 +173,7 @@
             <div class="cell-wrapper" data-row="${rowId}"><div class="anki-sim-wrapper"><div id="anki-${rowNum}" class="anki-sim"></div></div></div>
         `;
         grid.insertAdjacentHTML('beforeend', html);
-        setTimeout(() => {
-            updateAnkiPreview(rowNum);
-            autoResize(document.getElementById(`cell-a-${rowNum}`));
-            updateLayout();
-        }, 50);
+        setTimeout(() => { updateAnkiPreview(rowNum); autoResize(document.getElementById(`cell-a-${rowNum}`)); updateLayout(); }, 50);
     }
 
     function handleInput(el) {
@@ -204,19 +181,17 @@
         updateAnkiPreview(rowNum);
         autoResize(el);
         const all = document.querySelectorAll('textarea');
-        if (el === all[all.length - 1] || el === all[all.length - 2]) createRow();
+        if (all.length > 0 && (el === all[all.length - 1] || el === all[all.length - 2])) createRow();
     }
 
     function autoResize(el) {
         if (!el) return;
         const rowNum = el.id.split('-')[2];
-        const a = document.getElementById(`cell-a-${rowNum}`);
-        const b = document.getElementById(`cell-b-${rowNum}`);
+        const a = document.getElementById(`cell-a-${rowNum}`), b = document.getElementById(`cell-b-${rowNum}`);
         if (a && b) {
             a.style.height = 'auto'; b.style.height = 'auto';
             const tallest = Math.max(a.scrollHeight, b.scrollHeight, 100);
-            a.style.height = tallest + 'px';
-            b.style.height = tallest + 'px';
+            a.style.height = tallest + 'px'; b.style.height = tallest + 'px';
         }
     }
 
