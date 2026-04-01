@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anki-Sim Dark Editor</title>
+    <title>Anki-Sim 3-Way Editor</title>
     <style>
         html, body { 
             max-width: 100%; overflow-x: hidden; margin: 0; padding: 10px; 
@@ -33,10 +33,11 @@
         
         .anki-sim { width: 100%; line-height: 1.6; text-align: center; word-wrap: break-word; color: #ffffff; }
         
-        .anki-divider {
-            border: 0; height: 1px; background: #ffffff;
-            margin: 0.5em 0; width: 100%;
-        }
+        /* Raw Code View Specifics */
+        .mode-code .anki-sim { font-family: 'Courier New', Courier, monospace; text-align: left; color: #ff9f0a; font-size: 13px !important; }
+        .mode-code .anki-sim-wrapper { background: #000; border-color: #ff9f0a; }
+
+        .anki-divider { border: 0; height: 1px; background: #ffffff; margin: 1em 0; width: 100%; }
 
         .cloze-hidden { background-color: #004a99; color: #80bfff; padding: 0 6px; border-radius: 4px; cursor: default; font-weight: bold; }
         .cloze-revealed { color: #00aaff; font-weight: bold; background: none; }
@@ -49,9 +50,10 @@
         }
 
         .status { font-size: 11px; color: #8e8e93; margin-left: auto; }
-        button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3a3c; background: #3a3a3c; color: #f2f2f7; font-weight: 500; }
+        button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3a3c; background: #3a3a3c; color: #f2f2f7; font-weight: 500; transition: 0.2s; }
         .anki-btn { background: #007aff; color: white; border: none; }
-        .toggle-btn { background: #32d74b; color: #000; border: none; min-width: 180px; font-weight: bold; }
+        .toggle-btn { border: none; min-width: 220px; font-weight: bold; color: #000; }
+        
         .num-input { width: 50px; padding: 5px; border: 1px solid #3a3a3c; border-radius: 6px; text-align: center; background: #1c1c1e; color: #ffffff; }
     </style>
 </head>
@@ -63,15 +65,13 @@
     <button class="anki-btn" onclick="downloadAnki()">Export to Anki</button>
     
     <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#aeaeae;">
-        <span>Sim Width %</span>
-        <input type="number" id="widthInput" class="num-input" value="35" min="10" max="60" onchange="updateLayout()">
-    </div>
-    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#aeaeae;">
-        <span>Font Size (px)</span>
-        <input type="number" id="fontInput" class="num-input" value="18" min="10" max="40" onchange="updateLayout()">
+        <span>Width %</span>
+        <input type="number" id="widthInput" class="num-input" value="35" onchange="updateLayout()">
+        <span>Font Px</span>
+        <input type="number" id="fontInput" class="num-input" value="18" onchange="updateLayout()">
     </div>
 
-    <button id="masterToggle" class="toggle-btn" onclick="toggleAllModes()">Switch to ANSWER Mode</button>
+    <button id="masterToggle" class="toggle-btn" style="background:#32d74b;" onclick="cycleModes()">MODE: QUESTION</button>
     <button onclick="clearData()" style="color: #ff453a; margin-left: auto; border-color: #411d1d;">Clear All</button>
     <div id="saveStatus" class="status">Initializing...</div>
 </div>
@@ -80,42 +80,63 @@
     <div class="header"></div>
     <div class="header">Concept</div>
     <div class="header">Notes</div>
-    <div class="header">Anki Simulator</div>
+    <div id="simHeader" class="header">Anki Simulator</div>
 </div>
 
 <script>
     const grid = document.getElementById('gridContainer');
     const saveStatus = document.getElementById('saveStatus');
     let rowCount = 0;
-    let isAnswerMode = false;
+    
+    // Modes: 0 = Question, 1 = Answer, 2 = Raw Code
+    let currentMode = 0;
 
-    function applyTextFormatting(text, isForSim = true) {
-        let processed = text;
-        processed = processed.replace(/__(.*?)__/g, '<b><u>$1</u></b>');
-        processed = processed.replace(/_([^_]+)_/g, '<u>$1</u>');
-        if (isForSim) {
-            processed = processed.replace(/\*(.*?)\*/g, (match, content) => {
-                const parts = content.split(':');
-                const mainText = parts[0];
-                const hintText = parts[1] ? `[${parts[1]}]` : '[...]';
-                return isAnswerMode ? `<span class="cloze-revealed">${mainText}</span>` : `<span class="cloze-hidden">${hintText}</span>`;
-            });
+    function cycleModes() {
+        currentMode = (currentMode + 1) % 3;
+        const btn = document.getElementById('masterToggle');
+        const header = document.getElementById('simHeader');
+        
+        document.querySelectorAll('.anki-sim-wrapper').forEach(w => w.classList.remove('mode-code'));
+
+        if (currentMode === 0) {
+            btn.innerText = "MODE: QUESTION";
+            btn.style.background = "#32d74b";
+            header.innerText = "Anki Simulator (Q)";
+        } else if (currentMode === 1) {
+            btn.innerText = "MODE: ANSWER";
+            btn.style.background = "#ff9f0a";
+            header.innerText = "Anki Simulator (A)";
+        } else {
+            btn.innerText = "MODE: RAW CODE";
+            btn.style.background = "#5e5ce6";
+            btn.style.color = "#fff";
+            header.innerText = "Copy-Paste Code";
+            document.querySelectorAll('.anki-sim-wrapper').forEach(w => w.classList.add('mode-code'));
         }
-        return processed;
+        for(let i=1; i<=rowCount; i++) updateAnkiPreview(i);
     }
 
-    // FIXED: Unified logic for Sim and Export to handle dash-spacer without extra <br>
-    function processLineBreaks(text, isForSim = true) {
+    function applyFormatting(text, isForSim) {
+        let res = text.replace(/__(.*?)__/g, '<b><u>$1</u></b>').replace(/_([^_]+)_/g, '<u>$1</u>');
+        if (isForSim) {
+            res = res.replace(/\*(.*?)\*/g, (m, content) => {
+                const p = content.split(':');
+                const main = p[0], hint = p[1] ? `[${p[1]}]` : '[...]';
+                return currentMode === 1 ? `<span class="cloze-revealed">${main}</span>` : `<span class="cloze-hidden">${hint}</span>`;
+            });
+        }
+        return res;
+    }
+
+    function processLineBreaks(text, isForSim) {
         const lines = text.split('\n');
         let htmlParts = [];
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
-            let trimmed = line.trim();
-            if (trimmed === '-') {
+            if (line.trim() === '-') {
                 htmlParts.push('<div style="height: 0.5em;"></div>');
             } else {
-                let content = applyTextFormatting(line, isForSim);
-                // Only add <br> if there's a next line AND that line isn't a spacer dash
+                let content = applyFormatting(line, isForSim);
                 let suffix = (i < lines.length - 1 && lines[i+1].trim() !== '-') ? "<br>" : "";
                 htmlParts.push(content + suffix);
             }
@@ -128,9 +149,23 @@
         const b = document.getElementById(`cell-b-${index}`)?.value || '';
         const sim = document.getElementById(`anki-${index}`);
         if (!sim) return;
-        let title = a ? `<div style="font-weight:bold; color:#fff;">${applyTextFormatting(a, false)}</div>` : '';
-        let divider = (a && b) ? `<hr class="anki-divider">` : '';
-        sim.innerHTML = title + divider + processLineBreaks(b, true);
+
+        if (currentMode === 2) {
+            // Raw Code Mode
+            let colA = `<b>${applyFormatting(a, false)}</b><br>`;
+            let div = `<hr style="border:0; height:1px; background:#3a3a3c; margin:1em 0; width:100%;">`;
+            let rawB = b.split('\n').map(l => l.trim() === '-' ? '<div style="height: 0.5em;"></div>' : applyFormatting(l, false)).join('<br>');
+            let finalB = rawB.replace(/\*(.*?)\*/g, (m, c) => {
+                const p = c.split(':');
+                return p[1] ? `{{c1::${p[0]}::${p[1]}}}` : `{{c1::${p[0]}}}`;
+            });
+            sim.innerText = colA + div + finalB;
+        } else {
+            // Sim Modes
+            let title = a ? `<div style="font-weight:bold; color:#fff;">${applyFormatting(a, false)}</div>` : '';
+            let divider = (a && b) ? `<hr class="anki-divider">` : '';
+            sim.innerHTML = title + divider + processLineBreaks(b, true);
+        }
     }
 
     function downloadAnki() {
@@ -139,18 +174,14 @@
             const a = document.getElementById(`cell-a-${i}`)?.value || '';
             const b = document.getElementById(`cell-b-${i}`)?.value || '';
             if (a || b) {
-                let colA = `<b>${applyTextFormatting(a, false)}</b>`;
-                let divider = `<hr style="border:0; height:1px; background:#3a3a3c; margin:0.5em 0; width:100%;">`;
-                
-                // Get content with spacers and NO redundant breaks
-                let rawB = processLineBreaks(b, false);
-                
-                // Convert *asterisks* to Anki {{c1::}}
+                let colA = `<b>${applyFormatting(a, false)}</b>`;
+                let div = `<hr style="border:0; height:1px; background:#3a3a3c; margin:1em 0; width:100%;">`;
+                let rawB = b.split('\n').map(l => l.trim() === '-' ? '<div style="height: 0.5em;"></div>' : applyFormatting(l, false)).join('<br>');
                 let finalB = rawB.replace(/\*(.*?)\*/g, (m, c) => {
                     const p = c.split(':');
                     return p[1] ? `{{c1::${p[0]}::${p[1]}}}` : `{{c1::${p[0]}}}`;
                 });
-                csv += `"${(colA + divider + finalB).replace(/"/g, '""')}"\n`;
+                csv += `"${(colA + div + finalB).replace(/"/g, '""')}"\n`;
             }
         }
         const link = document.createElement('a');
@@ -158,41 +189,14 @@
         link.download = 'anki_import.csv'; link.click();
     }
 
-    function handleKey(e, el) {
-        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'i') {
-            e.preventDefault();
-            const start = el.selectionStart, end = el.selectionEnd;
-            if (start !== end) {
-                el.value = el.value.substring(0, start) + `*${el.value.substring(start, end)}*` + el.value.substring(end);
-            } else {
-                el.value = el.value.split('\n').map(l => (l.trim() && !l.includes('*')) ? `*${l.trim()}*` : l).join('\n');
-            }
-            handleInput(el);
-        }
-        if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
-            e.preventDefault();
-            const lines = el.value.split('\n').filter(l => l.trim() !== '-');
-            if (lines.length > 1) el.value = lines.join('\n-\n');
-            handleInput(el);
-        }
-    }
-
+    // --- standard handlers ---
     function updateLayout() {
-        const simWidth = document.getElementById('widthInput').value;
-        const fontSize = document.getElementById('fontInput').value;
-        const remaining = 100 - simWidth - 5;
-        grid.style.gridTemplateColumns = `40px ${remaining * 0.4}% ${remaining * 0.6}% ${simWidth}%`;
-        document.querySelectorAll('.anki-sim').forEach(el => el.style.fontSize = fontSize + 'px');
-        localStorage.setItem('pref_width', simWidth);
-        localStorage.setItem('pref_font', fontSize);
-    }
-
-    function toggleAllModes() {
-        isAnswerMode = !isAnswerMode;
-        const btn = document.getElementById('masterToggle');
-        btn.innerText = isAnswerMode ? "Switch to QUESTION Mode" : "Switch to ANSWER Mode";
-        btn.style.background = isAnswerMode ? "#ff9f0a" : "#32d74b";
-        for(let i=1; i<=rowCount; i++) updateAnkiPreview(i);
+        const simW = document.getElementById('widthInput').value;
+        const font = document.getElementById('fontInput').value;
+        const rem = 100 - simW - 5;
+        grid.style.gridTemplateColumns = `40px ${rem * 0.4}% ${rem * 0.6}% ${simW}%`;
+        document.querySelectorAll('.anki-sim').forEach(el => el.style.fontSize = font + 'px');
+        localStorage.setItem('pref_width', simW); localStorage.setItem('pref_font', font);
     }
 
     function createRow(valA = '', valB = '') {
@@ -203,7 +207,7 @@
             <div class="cell-wrapper" data-row="${rowId}"><button class="del-btn" onclick="deleteRow('${rowId}')">×</button></div>
             <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-a-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valA}</textarea></div>
             <div class="cell-wrapper" data-row="${rowId}"><textarea id="cell-b-${rowNum}" oninput="handleInput(this)" onkeydown="handleKey(event, this)">${valB}</textarea></div>
-            <div class="cell-wrapper" data-row="${rowId}"><div class="anki-sim-wrapper"><div id="anki-${rowNum}" class="anki-sim"></div></div></div>
+            <div class="cell-wrapper" data-row="${rowId}"><div id="wrap-${rowNum}" class="anki-sim-wrapper"><div id="anki-${rowNum}" class="anki-sim"></div></div></div>
         `;
         grid.insertAdjacentHTML('beforeend', html);
         setTimeout(() => { updateAnkiPreview(rowNum); autoResize(document.getElementById(`cell-a-${rowNum}`)); updateLayout(); }, 50);
@@ -225,6 +229,22 @@
             a.style.height = 'auto'; b.style.height = 'auto';
             const tallest = Math.max(a.scrollHeight, b.scrollHeight, 100);
             a.style.height = tallest + 'px'; b.style.height = tallest + 'px';
+        }
+    }
+
+    function handleKey(e, el) {
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'i') {
+            e.preventDefault();
+            const start = el.selectionStart, end = el.selectionEnd;
+            if (start !== end) el.value = el.value.substring(0, start) + `*${el.value.substring(start, end)}*` + el.value.substring(end);
+            else el.value = el.value.split('\n').map(l => (l.trim() && !l.includes('*')) ? `*${l.trim()}*` : l).join('\n');
+            handleInput(el);
+        }
+        if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+            e.preventDefault();
+            const lines = el.value.split('\n').filter(l => l.trim() !== '-');
+            if (lines.length > 1) el.value = lines.join('\n-\n');
+            handleInput(el);
         }
     }
 
@@ -262,9 +282,7 @@
             const a = tx[i].value.replace(/"/g, '""'), b = (tx[i+1]?.value || '').replace(/"/g, '""');
             if (a || b) csv += `"${a}","${b}"\n`;
         }
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        a.download = 'study_backup.csv'; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'study_backup.csv'; a.click();
     }
 
     function deleteRow(id) { if(confirm("Delete row?")) document.querySelectorAll(`[data-row="${id}"]`).forEach(el => el.remove()); }
